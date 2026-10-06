@@ -28,7 +28,7 @@ inline const IPAddress FALLBACK_UPSTREAM_DNS(8, 8, 8, 8);
 // ==========================================
 // ÖZEL ALAN ADI VE PORTLAR
 // ==========================================
-#define LOCAL_ADMIN_DOMAIN    "denemesitem.com"
+#define LOCAL_ADMIN_DOMAIN    "insallah.com"
 #define HTTP_SERVER_PORT      80
 #define HTTPS_SERVER_PORT     443
 #define DNS_SERVER_PORT       53

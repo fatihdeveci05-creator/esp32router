@@ -265,18 +265,21 @@ void WebServerManager::registerUriHandlers(httpd_handle_t server) {
 esp_err_t WebServerManager::rootHandler(httpd_req_t *req) {
     httpd_resp_set_type(req, "text/html; charset=utf-8");
 
-    // Kullanicinin ozel HTML sayfasi LittleFS'de varsa onu gonder
-    if (LittleFS.exists("/site/index.html")) {
-        File file = LittleFS.open("/site/index.html", "r");
-        if (file) {
-            char chunk[512];
-            while (file.available()) {
-                size_t read_bytes = file.readBytes(chunk, sizeof(chunk));
-                httpd_resp_send_chunk(req, chunk, read_bytes);
+    // Kullanicinin ozel HTML sayfasi (/site/index.html veya /index.html)
+    const char* custom_paths[] = {"/site/index.html", "/index.html"};
+    for (const char* path : custom_paths) {
+        if (LittleFS.exists(path)) {
+            File file = LittleFS.open(path, "r");
+            if (file) {
+                char chunk[512];
+                while (file.available()) {
+                    size_t read_bytes = file.readBytes(chunk, sizeof(chunk));
+                    httpd_resp_send_chunk(req, chunk, read_bytes);
+                }
+                file.close();
+                httpd_resp_send_chunk(req, nullptr, 0);
+                return ESP_OK;
             }
-            file.close();
-            httpd_resp_send_chunk(req, nullptr, 0);
-            return ESP_OK;
         }
     }
 
@@ -288,8 +291,8 @@ esp_err_t WebServerManager::rootHandler(httpd_req_t *req) {
 esp_err_t WebServerManager::adminHandler(httpd_req_t *req) {
     httpd_resp_set_type(req, "text/html; charset=utf-8");
 
-    // Yonetim Portali HTML dosyasi
-    const char* admin_paths[] = {"/admin/index.html", "/admin.html", "/index.html"};
+    // Yonetim Portali HTML dosyasi (/admin.html veya /admin/index.html)
+    const char* admin_paths[] = {"/admin.html", "/admin/index.html"};
     for (const char* path : admin_paths) {
         if (LittleFS.exists(path)) {
             File file = LittleFS.open(path, "r");
