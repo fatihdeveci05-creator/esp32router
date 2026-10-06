@@ -17,6 +17,7 @@ private:
     bool _running;
 
     static esp_err_t rootHandler(httpd_req_t *req);
+    static esp_err_t adminHandler(httpd_req_t *req);
     static esp_err_t staticFileHandler(httpd_req_t *req);
     static esp_err_t apiStatusHandler(httpd_req_t *req);
     static esp_err_t apiClientsHandler(httpd_req_t *req);
@@ -26,6 +27,8 @@ private:
     static esp_err_t apiBlockClientHandler(httpd_req_t *req);
     static esp_err_t apiWifiScanHandler(httpd_req_t *req);
     static esp_err_t apiWifiConfigHandler(httpd_req_t *req);
+    static esp_err_t apiCustomSiteGetHandler(httpd_req_t *req);
+    static esp_err_t apiCustomSitePostHandler(httpd_req_t *req);
     static esp_err_t apiRebootHandler(httpd_req_t *req);
 
     void registerUriHandlers(httpd_handle_t server);

@@ -12,6 +12,7 @@ function switchTab(tabId) {
     if (tabId === 'tab-clients') loadClients();
     if (tabId === 'tab-logs') loadLogs();
     if (tabId === 'tab-security') loadBlacklist();
+    if (tabId === 'tab-custom-site') loadCustomSite();
 }
 
 // Bayt Formatlama Yardimcisi (KB, MB, GB)
@@ -285,6 +286,47 @@ async function saveWifiConfig() {
         }
     } catch (err) {
         alert('Kayıt hatası: ' + err);
+    }
+}
+
+// 6. Ozel Web Sitesi ve URL Yonetimi
+async function loadCustomSite() {
+    try {
+        const res = await fetch('/api/custom-site');
+        const data = await res.json();
+        if (data.domain) {
+            document.getElementById('custom-domain-input').value = data.domain;
+        }
+        if (data.html !== undefined) {
+            document.getElementById('custom-html-editor').value = data.html;
+        }
+    } catch (err) {
+        console.error('Özel site bilgisi alınamadı:', err);
+    }
+}
+
+async function saveCustomSite() {
+    const domain = document.getElementById('custom-domain-input').value.trim().toLowerCase();
+    const html = document.getElementById('custom-html-editor').value;
+
+    if (!domain) {
+        alert('Lütfen geçerli bir alan adı (URL) girin.');
+        return;
+    }
+
+    try {
+        const res = await fetch('/api/custom-site', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ domain, html })
+        });
+        if (res.ok) {
+            alert('Harika! Özel web siteniz ve alan adınız başarıyla kaydedildi ve yayına alındı.');
+        } else {
+            alert('Kaydetme hatası oluştu!');
+        }
+    } catch (err) {
+        alert('Hata: ' + err);
     }
 }
 

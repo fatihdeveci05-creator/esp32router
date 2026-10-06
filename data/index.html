@@ -26,6 +26,7 @@
         <button class="tab-btn" onclick="switchTab('tab-clients')">📱 Bağlı Cihazlar (<span id="client-count">0</span>)</button>
         <button class="tab-btn" onclick="switchTab('tab-logs')">📡 Canlı Trafik & DNS</button>
         <button class="tab-btn" onclick="switchTab('tab-security')">🛡️ Güvenlik & Filtreleme</button>
+        <button class="tab-btn" onclick="switchTab('tab-custom-site')">🌐 Özel Web Sitesi & URL</button>
         <button class="tab-btn" onclick="switchTab('tab-settings')">⚙️ Wi-Fi & Sistem</button>
     </div>
 
@@ -165,6 +166,36 @@
                         </tbody>
                     </table>
                 </div>
+            </div>
+        </section>
+
+        <!-- ================= TAB: ÖZEL WEB SİTESİ & URL ================= -->
+        <section id="tab-custom-site" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Özel Alan Adı (URL) Yapılandırması</h2>
+                    <a id="preview-site-link" href="/" target="_blank" class="btn btn-outline">Siteyi Görüntüle ↗</a>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Yönlendirilecek Alan Adı (URL)</label>
+                    <input type="text" id="custom-domain-input" class="form-input" placeholder="Ör: denemesitem.com veya kafemenu.com">
+                    <p style="font-size: 12px; color: var(--text-muted); margin-top: 6px;">
+                        Kullanıcılar bu adresi yazdığında doğrudan ESP32 içindeki özel web sayfanız açılacaktır.
+                    </p>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Kendi HTML / CSS Kodlarınızı Girin</h2>
+                    <button class="btn btn-primary" onclick="saveCustomSite()">Kaydet ve Yayına Al</button>
+                </div>
+                <div class="form-group">
+                    <textarea id="custom-html-editor" class="form-input" style="height: 350px; font-family: monospace; font-size: 13px; line-height: 1.4; white-space: pre;" placeholder="Buraya kendi özel HTML/CSS kodlarınızı yapıştırın..."></textarea>
+                </div>
+                <p style="font-size: 12px; color: var(--text-muted);">
+                    Kaydettiğinizde kodlar LittleFS flash belleğine yazılır ve kartı yeniden başlatmaya gerek kalmadan anında yayına girer.
+                </p>
             </div>
         </section>
 

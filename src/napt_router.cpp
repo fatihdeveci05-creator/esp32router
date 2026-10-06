@@ -33,17 +33,21 @@ void NaptRouter::loadConfig() {
     String ap_ssid = prefs.getString(NVS_KEY_AP_SSID, DEFAULT_AP_SSID);
     String ap_pass = prefs.getString(NVS_KEY_AP_PASS, DEFAULT_AP_PASS);
     String admin_pass = prefs.getString(NVS_KEY_ADMIN_PASS, "admin");
+    String custom_domain = prefs.getString(NVS_KEY_CUSTOM_DOMAIN, LOCAL_ADMIN_DOMAIN);
 
     strncpy(_config.sta_ssid, sta_ssid.c_str(), sizeof(_config.sta_ssid) - 1);
     strncpy(_config.sta_pass, sta_pass.c_str(), sizeof(_config.sta_pass) - 1);
     strncpy(_config.ap_ssid, ap_ssid.c_str(), sizeof(_config.ap_ssid) - 1);
     strncpy(_config.ap_pass, ap_pass.c_str(), sizeof(_config.ap_pass) - 1);
     strncpy(_config.admin_pass, admin_pass.c_str(), sizeof(_config.admin_pass) - 1);
+    strncpy(_config.custom_domain, custom_domain.c_str(), sizeof(_config.custom_domain) - 1);
 
     _config.napt_enabled = prefs.getBool("napt_en", true);
     _config.filter_enabled = prefs.getBool("filter_en", true);
 
     prefs.end();
+
+    dnsEngine.setCustomDomain(_config.custom_domain);
 }
 
 void NaptRouter::saveConfig() {
@@ -53,6 +57,7 @@ void NaptRouter::saveConfig() {
     prefs.putString(NVS_KEY_AP_SSID, _config.ap_ssid);
     prefs.putString(NVS_KEY_AP_PASS, _config.ap_pass);
     prefs.putString(NVS_KEY_ADMIN_PASS, _config.admin_pass);
+    prefs.putString(NVS_KEY_CUSTOM_DOMAIN, _config.custom_domain);
     prefs.putBool("napt_en", _config.napt_enabled);
     prefs.putBool("filter_en", _config.filter_enabled);
     prefs.end();
@@ -228,6 +233,14 @@ void NaptRouter::updateApSettings(const char* ssid, const char* pass) {
     Serial.println("[AĞ] AP ayarlari guncellendi. SoftAP yeniden baslatiliyor...");
     WiFi.softAP(_config.ap_ssid, _config.ap_pass, DEFAULT_AP_CHANNEL, 0, DEFAULT_AP_MAX_CLIENT);
     configureApDhcpDns();
+}
+
+void NaptRouter::updateCustomDomain(const char* domain) {
+    if (!domain || strlen(domain) < 3) return;
+    strncpy(_config.custom_domain, domain, sizeof(_config.custom_domain) - 1);
+    saveConfig();
+    dnsEngine.setCustomDomain(_config.custom_domain);
+    Serial.printf("[AĞ] Ozel yonlendirme alani kaydedildi: %s\n", _config.custom_domain);
 }
 
 void NaptRouter::factoryReset() {

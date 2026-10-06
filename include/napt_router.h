@@ -18,9 +18,11 @@ public:
     IPAddress getStaIp() const;
     String getStaSsid() const;
     
-    // Wi-Fi Yapilandirma
+    // Wi-Fi ve Domain Yapilandirma
     void connectToRemoteAp(const char* ssid, const char* pass);
     void updateApSettings(const char* ssid, const char* pass);
+    void updateCustomDomain(const char* domain);
+    String getCustomDomain() const { return String(_config.custom_domain); }
     void factoryReset();
 
 private:

@@ -17,6 +17,8 @@ DnsEngine::DnsEngine()
       _task_handle(nullptr),
       _running(false)
 {
+    strncpy(_custom_domain, LOCAL_ADMIN_DOMAIN, sizeof(_custom_domain) - 1);
+    _custom_domain[sizeof(_custom_domain) - 1] = '\0';
 }
 
 bool DnsEngine::begin(const IPAddress& upstream_dns) {
@@ -64,6 +66,14 @@ void DnsEngine::stop() {
 
 void DnsEngine::setUpstreamDns(const IPAddress& upstream_dns) {
     _upstream_dns = upstream_dns;
+}
+
+void DnsEngine::setCustomDomain(const char* domain) {
+    if (domain && strlen(domain) > 2) {
+        strncpy(_custom_domain, domain, sizeof(_custom_domain) - 1);
+        _custom_domain[sizeof(_custom_domain) - 1] = '\0';
+        Serial.printf("[DNS] Ozel yonlendirme alan adi guncellendi: %s\n", _custom_domain);
+    }
 }
 
 bool DnsEngine::parseQName(const uint8_t* buffer, size_t len, size_t& offset, char* out_domain, size_t max_out) {
@@ -222,9 +232,14 @@ void DnsEngine::process() {
         return;
     }
 
-    // 1. DURUM: Kullanici "denemesitem.com" girdi -> Kendi yerel IP'mizi don (192.168.4.1)
-    if (strcasecmp(domain, LOCAL_ADMIN_DOMAIN) == 0 ||
-        strcasecmp(domain, "www." LOCAL_ADMIN_DOMAIN) == 0) 
+    // 1. DURUM: Kullanici ozel alan adi veya "denemesitem.com" girdi -> Kendi yerel IP'mizi don (192.168.4.1)
+    bool is_custom_site = (strcasecmp(domain, _custom_domain) == 0 ||
+                           (strlen(domain) > 4 && strncasecmp(domain, "www.", 4) == 0 && strcasecmp(domain + 4, _custom_domain) == 0) ||
+                           strcasecmp(domain, LOCAL_ADMIN_DOMAIN) == 0 ||
+                           (strlen(domain) > 4 && strncasecmp(domain, "www.", 4) == 0 && strcasecmp(domain + 4, LOCAL_ADMIN_DOMAIN) == 0) ||
+                           strcasecmp(domain, "admin.local") == 0);
+
+    if (is_custom_site) 
     {
         uint8_t resp_buf[512];
         size_t resp_len = 0;

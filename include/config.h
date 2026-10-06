@@ -47,6 +47,7 @@ inline const IPAddress FALLBACK_UPSTREAM_DNS(8, 8, 8, 8);
 #define NVS_KEY_AP_SSID       "ap_ssid"
 #define NVS_KEY_AP_PASS       "ap_pass"
 #define NVS_KEY_ADMIN_PASS    "admin_pass"
+#define NVS_KEY_CUSTOM_DOMAIN "cust_domain"
 
 struct RouterConfig {
     char sta_ssid[64];
@@ -54,6 +55,7 @@ struct RouterConfig {
     char ap_ssid[32];
     char ap_pass[64];
     char admin_pass[32];
+    char custom_domain[64];
     bool napt_enabled;
     bool filter_enabled;
 };

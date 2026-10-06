@@ -8,8 +8,36 @@
 
 WebServerManager webServerManager;
 
-// LittleFS yuklenmemis ise acil durum yedek HTML sablonu
-static const char FALLBACK_HTML[] PROGMEM = R"rawhtml(
+// Kullanicinin ozel web sitesi icin varsayilan HTML sablonu
+static const char FALLBACK_CUSTOM_HTML[] PROGMEM = R"rawhtml(
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Özel Web Siteniz - ESP32</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #0f172a; color: #f8fafc; text-align: center; padding: 60px 20px; margin: 0; }
+        .box { max-width: 650px; margin: auto; background: #1e293b; padding: 40px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        h1 { color: #38bdf8; font-size: 26px; margin-bottom: 12px; }
+        p { color: #94a3b8; font-size: 15px; line-height: 1.6; }
+        .info { background: #0b0f19; padding: 16px; border-radius: 10px; margin: 24px 0; font-family: monospace; color: #38bdf8; font-size: 13px; }
+        .btn { display: inline-block; background: #38bdf8; color: #0b0f19; padding: 12px 24px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="box">
+        <h1>🌐 Özel Web Siteniz Yayında!</h1>
+        <p>Bu web sayfası doğrudan <strong>ESP32 DevKit V1</strong> dahili belleğinden HTTPS üzerinden sunulmaktadır.</p>
+        <div class="info">Kendi HTML/CSS kodlarınızı yüklemek veya URL alan adını değiştirmek için yönetim paneline geçebilirsiniz.</div>
+        <a href="/admin" class="btn">⚙️ Yönetim Paneline Git (/admin)</a>
+    </div>
+</body>
+</html>
+)rawhtml";
+
+// LittleFS baglanamazsa acil durum admin paneli
+static const char FALLBACK_ADMIN_HTML[] PROGMEM = R"rawhtml(
 <!DOCTYPE html>
 <html lang="tr">
 <head>
@@ -22,14 +50,12 @@ static const char FALLBACK_HTML[] PROGMEM = R"rawhtml(
         h1 { color: #38bdf8; font-size: 22px; margin-top: 0; }
         p { color: #94a3b8; line-height: 1.6; }
         .badge { background: #0284c7; padding: 4px 10px; border-radius: 6px; font-size: 13px; font-weight: bold; }
-        .btn { display: inline-block; background: #38bdf8; color: #0f172a; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: bold; margin-top: 15px; }
     </style>
 </head>
 <body>
     <div class="card">
-        <h1>🚀 ESP32 Güvenli Yönlendirici Aktif</h1>
-        <p>Tebrikler! <strong>denemesitem.com</strong> HTTPS (Port 443) üzerinden ESP32 yerel hafızasından başarıyla çalışıyor.</p>
-        <p>Tam yönetim paneli (canlı grafikler, engelleme ve Wi-Fi ayarları) için LittleFS dosyalarının yüklenmesi bekleniyor veya API'ler arka planda çalışmaktadır.</p>
+        <h1>🚀 ESP32 Yönetim Portalı</h1>
+        <p>Yönlendirici ve API servisleri arka planda aktiftir. Tam arayüz için LittleFS dosyalarını yükleyebilirsiniz.</p>
         <p><span class="badge">Sistem Durumu: Çevrimiçi</span></p>
     </div>
 </body>
@@ -201,6 +227,32 @@ void WebServerManager::registerUriHandlers(httpd_handle_t server) {
     };
     httpd_register_uri_handler(server, &uri_api_wifi_cfg);
 
+    // Yonetim Portali (/admin)
+    httpd_uri_t uri_admin = {
+        .uri       = "/admin",
+        .method    = HTTP_GET,
+        .handler   = adminHandler,
+        .user_ctx  = nullptr
+    };
+    httpd_register_uri_handler(server, &uri_admin);
+
+    // Ozel Site Ayarlari ve HTML Duzenleyici API
+    httpd_uri_t uri_api_site_get = {
+        .uri       = "/api/custom-site",
+        .method    = HTTP_GET,
+        .handler   = apiCustomSiteGetHandler,
+        .user_ctx  = nullptr
+    };
+    httpd_register_uri_handler(server, &uri_api_site_get);
+
+    httpd_uri_t uri_api_site_post = {
+        .uri       = "/api/custom-site",
+        .method    = HTTP_POST,
+        .handler   = apiCustomSitePostHandler,
+        .user_ctx  = nullptr
+    };
+    httpd_register_uri_handler(server, &uri_api_site_post);
+
     httpd_uri_t uri_api_reboot = {
         .uri       = "/api/reboot",
         .method    = HTTP_POST,
@@ -213,8 +265,9 @@ void WebServerManager::registerUriHandlers(httpd_handle_t server) {
 esp_err_t WebServerManager::rootHandler(httpd_req_t *req) {
     httpd_resp_set_type(req, "text/html; charset=utf-8");
 
-    if (LittleFS.exists("/index.html")) {
-        File file = LittleFS.open("/index.html", "r");
+    // Kullanicinin ozel HTML sayfasi LittleFS'de varsa onu gonder
+    if (LittleFS.exists("/site/index.html")) {
+        File file = LittleFS.open("/site/index.html", "r");
         if (file) {
             char chunk[512];
             while (file.available()) {
@@ -227,8 +280,34 @@ esp_err_t WebServerManager::rootHandler(httpd_req_t *req) {
         }
     }
 
-    // LittleFS'de dosya yoksa dahili yedek sablonu gonder
-    httpd_resp_send(req, FALLBACK_HTML, HTTPD_RESP_USE_STRLEN);
+    // LittleFS'de ozel dosya yoksa varsayilan ozel site karsilama ekranini gonder
+    httpd_resp_send(req, FALLBACK_CUSTOM_HTML, HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
+esp_err_t WebServerManager::adminHandler(httpd_req_t *req) {
+    httpd_resp_set_type(req, "text/html; charset=utf-8");
+
+    // Yonetim Portali HTML dosyasi
+    const char* admin_paths[] = {"/admin/index.html", "/admin.html", "/index.html"};
+    for (const char* path : admin_paths) {
+        if (LittleFS.exists(path)) {
+            File file = LittleFS.open(path, "r");
+            if (file) {
+                char chunk[512];
+                while (file.available()) {
+                    size_t read_bytes = file.readBytes(chunk, sizeof(chunk));
+                    httpd_resp_send_chunk(req, chunk, read_bytes);
+                }
+                file.close();
+                httpd_resp_send_chunk(req, nullptr, 0);
+                return ESP_OK;
+            }
+        }
+    }
+
+    // LittleFS baglanamadiysa acil durum admin paneli
+    httpd_resp_send(req, FALLBACK_ADMIN_HTML, HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
 
@@ -442,6 +521,87 @@ esp_err_t WebServerManager::apiWifiConfigHandler(httpd_req_t *req) {
 
     httpd_resp_set_type(req, "application/json");
     httpd_resp_send(req, "{\"status\":\"connecting\"}", HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
+esp_err_t WebServerManager::apiCustomSiteGetHandler(httpd_req_t *req) {
+    JsonDocument doc;
+    doc["domain"] = naptRouter.getCustomDomain();
+
+    String html_content = "";
+    if (LittleFS.exists("/site/index.html")) {
+        File f = LittleFS.open("/site/index.html", "r");
+        if (f) {
+            html_content = f.readString();
+            f.close();
+        }
+    }
+    doc["html"] = html_content;
+
+    String response;
+    serializeJson(doc, response);
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+    httpd_resp_send(req, response.c_str(), response.length());
+    return ESP_OK;
+}
+
+esp_err_t WebServerManager::apiCustomSitePostHandler(httpd_req_t *req) {
+    int total_len = req->content_len;
+    if (total_len <= 0 || total_len > 16384) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Gecersiz veya asiri buyuk veri");
+        return ESP_FAIL;
+    }
+
+    char* buf = (char*)malloc(total_len + 1);
+    if (!buf) {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+
+    int cur = 0;
+    while (cur < total_len) {
+        int ret = httpd_req_recv(req, buf + cur, total_len - cur);
+        if (ret <= 0) {
+            free(buf);
+            httpd_resp_send_500(req);
+            return ESP_FAIL;
+        }
+        cur += ret;
+    }
+    buf[total_len] = '\0';
+
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, buf);
+    free(buf);
+
+    if (err) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "JSON formati gecersiz");
+        return ESP_FAIL;
+    }
+
+    if (doc["domain"].is<const char*>()) {
+        const char* new_domain = doc["domain"];
+        if (new_domain && strlen(new_domain) > 2) {
+            naptRouter.updateCustomDomain(new_domain);
+        }
+    }
+
+    if (doc["html"].is<const char*>()) {
+        const char* new_html = doc["html"];
+        if (new_html) {
+            File f = LittleFS.open("/site/index.html", "w");
+            if (f) {
+                f.print(new_html);
+                f.close();
+                Serial.println("[WEB] Yeni ozel site HTML kodu LittleFS'e yazildi.");
+            }
+        }
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, "{\"status\":\"ok\"}", HTTPD_RESP_USE_STRLEN);
     return ESP_OK;
 }
 

@@ -12,6 +12,8 @@ public:
     bool begin(const IPAddress& upstream_dns = FALLBACK_UPSTREAM_DNS);
     void stop();
     void setUpstreamDns(const IPAddress& upstream_dns);
+    void setCustomDomain(const char* domain);
+    const char* getCustomDomain() const { return _custom_domain; }
 
     // FreeRTOS Görevi olarak arka planda çalışır
     void process();
@@ -20,6 +22,7 @@ private:
     WiFiUDP _local_udp;       // Port 53 dinleyicisi (AP İstemcileri)
     WiFiUDP _upstream_udp;    // Upstream DNS yönlendiricisi (İnternet)
     IPAddress _upstream_dns;
+    char _custom_domain[64];
     TaskHandle_t _task_handle;
     bool _running;
 
