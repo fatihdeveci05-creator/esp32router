@@ -1,0 +1,33 @@
+# PlatformIO
+.pio
+.pioenvs
+.piolibdeps
+
+# VS Code
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+*.code-workspace
+
+# Build artifacts & temp
+*.o
+*.a
+*.d
+*.bin
+*.elf
+*.map
+
+# Arduino IDE
+build/
+*.hex
+
+# OS files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Secrets / local config
+secrets.h
+config.local.h
