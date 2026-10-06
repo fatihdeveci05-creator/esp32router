@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 Güvenli Yönlendirici & Trafik Paneli</title>
+    <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+    <header class="header">
+        <div class="brand">
+            <div class="brand-icon">⚡</div>
+            <div>
+                <h1>ESP32 Secure Router</h1>
+                <span>denemesitem.com | HTTPS Güvenli Ağ Geçidi</span>
+            </div>
+        </div>
+        <div id="system-status-badge">
+            <span class="badge badge-warning">Bağlantı Kontrol Ediliyor...</span>
+        </div>
+    </header>
+
+    <div class="nav-tabs">
+        <button class="tab-btn active" onclick="switchTab('tab-overview')">📊 Genel Bakış</button>
+        <button class="tab-btn" onclick="switchTab('tab-clients')">📱 Bağlı Cihazlar (<span id="client-count">0</span>)</button>
+        <button class="tab-btn" onclick="switchTab('tab-logs')">📡 Canlı Trafik & DNS</button>
+        <button class="tab-btn" onclick="switchTab('tab-security')">🛡️ Güvenlik & Filtreleme</button>
+        <button class="tab-btn" onclick="switchTab('tab-settings')">⚙️ Wi-Fi & Sistem</button>
+    </div>
+
+    <main class="container">
+
+        <!-- ================= TAB 1: GENEL BAKIŞ ================= -->
+        <section id="tab-overview" class="tab-content active">
+            <div class="grid-metrics">
+                <div class="metric-card">
+                    <div class="metric-title">İnternet Durumu</div>
+                    <div class="metric-value" id="val-sta-status">-</div>
+                    <div class="metric-sub" id="val-sta-ssid">Modem Bekleniyor</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-title">Sinyal Kalitesi (RSSI)</div>
+                    <div class="metric-value" id="val-sta-rssi">- dBm</div>
+                    <div class="metric-sub">Uzak Wi-Fi Gücü</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-title">Toplam İndirilen (Download)</div>
+                    <div class="metric-value" id="val-total-rx">0 KB</div>
+                    <div class="metric-sub">Kümülatif Veri</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-title">Toplam Yüklenen (Upload)</div>
+                    <div class="metric-value" id="val-total-tx">0 KB</div>
+                    <div class="metric-sub">Kümülatif Veri</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-title">Boş Bellek (RAM)</div>
+                    <div class="metric-value" id="val-free-heap">- KB</div>
+                    <div class="metric-sub">Sistem Kararlılığı</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-title">Çalışma Süresi (Uptime)</div>
+                    <div class="metric-value" id="val-uptime">0 sn</div>
+                    <div class="metric-sub">Kesintisiz Süre</div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Hızlı Sistem Özeti</h2>
+                </div>
+                <p style="color: var(--text-muted); font-size: 14px;">
+                    Bu ağ geçidi <strong>DOIT ESP32 DevKit V1</strong> üzerinde çalışmaktadır. Bağlanan tüm kullanıcılar internet erişimini bu cihaz üzerinden alırken, <strong>denemesitem.com</strong> adresi doğrudan bu dahili bellekten HTTPS (Port 443) ile güvenle sunulmaktadır.
+                </p>
+            </div>
+        </section>
+
+        <!-- ================= TAB 2: BAĞLI CİHAZLAR ================= -->
+        <section id="tab-clients" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Ağdaki Cihazlar ve Veri Tüketimi</h2>
+                    <button class="btn btn-outline" onclick="loadClients()">Yenile</button>
+                </div>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>IP Adresi</th>
+                                <th>MAC Adresi</th>
+                                <th>İndirilen (Rx)</th>
+                                <th>Yüklenen (Tx)</th>
+                                <th>Durum</th>
+                                <th>Erişim Yönetimi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="clients-table-body">
+                            <tr><td colspan="6" style="text-align: center; color: var(--text-muted);">Cihazlar taranıyor...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= TAB 3: CANLI DNS TRAFİĞİ ================= -->
+        <section id="tab-logs" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Canlı DNS ve Web Trafik Günlüğü</h2>
+                    <div>
+                        <span id="log-count-badge" class="badge badge-primary">0 Kayıt</span>
+                        <button class="btn btn-outline" onclick="loadLogs()" style="margin-left: 8px;">Yenile</button>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Zaman</th>
+                                <th>İstemci IP</th>
+                                <th>Hedef Alan Adı</th>
+                                <th>Güvenlik Eylemi</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logs-table-body">
+                            <tr><td colspan="4" style="text-align: center; color: var(--text-muted);">Sorgu kaydı bekleniyor...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= TAB 4: GÜVENLİK & KARA LİSTE ================= -->
+        <section id="tab-security" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Yeni Alan Adı Engelle (Blacklist)</h2>
+                </div>
+                <div class="flex-row">
+                    <input type="text" id="new-domain-input" class="form-input flex-grow" placeholder="Ör: tiktok.com, ads.doubleclick.net">
+                    <button class="btn btn-danger" onclick="addBlacklistDomain()">Siteyi Engelle</button>
+                </div>
+                <p style="font-size: 12px; color: var(--text-muted); margin-top: 8px;">
+                    Engellenen sitelere girmeye çalışan tüm kullanıcıların sorguları <code>0.0.0.0</code> IP adresine yönlendirilerek erişim tamamen engellenir.
+                </p>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Aktif Engellenen Alan Adları</h2>
+                    <button class="btn btn-outline" onclick="loadBlacklist()">Yenile</button>
+                </div>
+                <div class="table-responsive">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Sıra</th>
+                                <th>Yasaklı Alan Adı</th>
+                                <th>İşlem</th>
+                            </tr>
+                        </thead>
+                        <tbody id="blacklist-table-body">
+                            <tr><td colspan="3" style="text-align: center; color: var(--text-muted);">Kayıtlar yükleniyor...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- ================= TAB 5: Wİ-Fİ & SİSTEM AYARLARI ================= -->
+        <section id="tab-settings" class="tab-content">
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Uzak Wi-Fi Modeme Bağlan</h2>
+                    <button class="btn btn-primary" onclick="scanWifiNetworks()">Ağları Tara</button>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Çevredeki Wi-Fi Ağları</label>
+                    <select id="wifi-select" class="form-input" onchange="onWifiSelectChange()">
+                        <option value="">-- Ağ seçmek için tarayın veya elle girin --</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Modem Wi-Fi Adı (SSID)</label>
+                    <input type="text" id="sta-ssid-input" class="form-input" placeholder="Modem Wi-Fi Adı">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Modem Wi-Fi Şifresi</label>
+                    <input type="password" id="sta-pass-input" class="form-input" placeholder="Wi-Fi Şifresi">
+                </div>
+                <button class="btn btn-primary" onclick="saveWifiConfig()">Kaydet ve Bağlan</button>
+            </div>
+
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Cihaz Yönetimi</h2>
+                </div>
+                <p style="color: var(--text-muted); font-size: 13px; margin-bottom: 16px;">
+                    Cihazı yeniden başlatmak veya fabrika ayarlarına döndürmek için aşağıdaki seçenekleri kullanabilirsiniz.
+                </p>
+                <div class="flex-row">
+                    <button class="btn btn-outline" onclick="rebootEsp32()">Cihazı Yeniden Başlat (Reboot)</button>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <script src="/app.js"></script>
+</body>
+</html>
