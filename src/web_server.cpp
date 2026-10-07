@@ -82,16 +82,25 @@ bool WebServerManager::begin() {
         }
     }
 
+#include <esp_idf_version.h>
+
     // ==========================================
     // 1. HTTPS SUNUCUSU (PORT 443) - mbedTLS
     // ==========================================
     httpd_ssl_config_t https_conf = HTTPD_SSL_CONFIG_DEFAULT();
+#if defined(ESP_IDF_VERSION_MAJOR) && (ESP_IDF_VERSION_MAJOR >= 5)
+    https_conf.servercert = (const uint8_t*)SERVER_CERT_PEM;
+    https_conf.servercert_len = strlen(SERVER_CERT_PEM) + 1;
+#else
     https_conf.cacert_pem = (const uint8_t*)SERVER_CERT_PEM;
     https_conf.cacert_len = strlen(SERVER_CERT_PEM) + 1;
+#endif
     https_conf.prvtkey_pem = (const uint8_t*)SERVER_KEY_PEM;
     https_conf.prvtkey_len = strlen(SERVER_KEY_PEM) + 1;
     https_conf.port_secure = HTTPS_SERVER_PORT;
-    https_conf.httpd.stack_size = 10240;
+    https_conf.transport_mode = HTTPD_SSL_TRANSPORT_SECURE;
+    https_conf.httpd.stack_size = 16384;      // 16 KB stack: TLS el sikismasinda stack overflow cokmesini kesin olarak onler
+    https_conf.httpd.max_open_sockets = 2;    // RAM korumasi: Soket basina ~35 KB RAM tasarrufu saglar
     https_conf.httpd.max_uri_handlers = 32;
     https_conf.httpd.uri_match_fn = httpd_uri_match_wildcard;
     https_conf.httpd.lru_purge_enable = true;
@@ -318,7 +327,7 @@ esp_err_t WebServerManager::rootHandler(httpd_req_t *req) {
         if (LittleFS.exists(path)) {
             File file = LittleFS.open(path, "r");
             if (file) {
-                char chunk[1460];
+                char chunk[512];
                 while (file.available()) {
                     size_t read_bytes = file.readBytes(chunk, sizeof(chunk));
                     httpd_resp_send_chunk(req, chunk, read_bytes);
@@ -344,7 +353,7 @@ esp_err_t WebServerManager::adminHandler(httpd_req_t *req) {
         if (LittleFS.exists(path)) {
             File file = LittleFS.open(path, "r");
             if (file) {
-                char chunk[1460];
+                char chunk[512];
                 while (file.available()) {
                     size_t read_bytes = file.readBytes(chunk, sizeof(chunk));
                     httpd_resp_send_chunk(req, chunk, read_bytes);
@@ -385,7 +394,7 @@ esp_err_t WebServerManager::staticFileHandler(httpd_req_t *req) {
     if (LittleFS.exists(path)) {
         File file = LittleFS.open(path, "r");
         if (file) {
-            char chunk[1460];
+            char chunk[512];
             while (file.available()) {
                 size_t read_bytes = file.readBytes(chunk, sizeof(chunk));
                 httpd_resp_send_chunk(req, chunk, read_bytes);
