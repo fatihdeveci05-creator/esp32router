@@ -29,6 +29,8 @@ private:
     static esp_err_t apiWifiConfigHandler(httpd_req_t *req);
     static esp_err_t apiCustomSiteGetHandler(httpd_req_t *req);
     static esp_err_t apiCustomSitePostHandler(httpd_req_t *req);
+    static esp_err_t apiCustomSiteDomainPostHandler(httpd_req_t *req);
+    static esp_err_t apiCustomSiteHtmlPostHandler(httpd_req_t *req);
     static esp_err_t apiRebootHandler(httpd_req_t *req);
 
     void registerUriHandlers(httpd_handle_t server);

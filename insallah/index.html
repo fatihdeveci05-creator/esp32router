@@ -4,29 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>İnşallah • Giriş Yap</title>
-  <!-- Tailwind CSS CDN -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            igBlue: '#0095F6',
-            igBlueHover: '#1877F2',
-            igBlueLight: '#E8F5FD',
-            igBlueDisabled: '#B2DFFC',
-            igBorder: '#DBDBDB',
-            igDark: '#262626',
-            igGrayText: '#737373',
-            igBgInput: '#FAFAFA'
-          },
-          fontFamily: {
-            sans: ['-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'Helvetica', 'Arial', 'sans-serif']
-          }
-        }
-      }
-    }
-  </script>
+  <!-- Local Standalone Tailwind CSS (100% Offline) -->
+  <link rel="stylesheet" href="/tailwind.css">
   <style>
     /* Gradient text animation & custom effects */
     .ig-headline-gradient {
@@ -96,7 +75,7 @@
           <!-- LEFT CARD (Tilted -7deg) -->
           <div class="absolute left-4 sm:left-8 top-10 sm:top-12 w-[170px] sm:w-[195px] h-[310px] sm:h-[350px] rounded-[26px] overflow-hidden story-card-shadow transform -rotate-[7deg] -translate-x-2 transition-all duration-500 hover:-translate-y-2 hover:rotate-[-5deg] z-10 bg-slate-900 border-[2.5px] border-white/80">
             <!-- Background Image (Moody/Neon vibe portrait) -->
-            <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=600&q=80" 
+            <img src="/card1.jpg" 
                  alt="Yakın Arkadaş Hikayesi" 
                  class="w-full h-full object-cover brightness-95" />
             
@@ -126,7 +105,7 @@
           <!-- CENTER CARD (Main in Focus, Upright) -->
           <div class="relative w-[190px] sm:w-[220px] h-[350px] sm:h-[400px] rounded-[30px] overflow-hidden story-card-center z-20 border-[3.5px] border-white transition-transform duration-500 hover:scale-[1.02] bg-slate-800">
             <!-- Background Image (Friends laughing / candid) -->
-            <img src="https://images.unsplash.com/photo-1529156069898-49953e39b3ac?auto=format&fit=crop&w=600&q=80" 
+            <img src="/card2.jpg" 
                  alt="Merkez Hikaye" 
                  class="w-full h-full object-cover" />
             
@@ -159,7 +138,7 @@
           <!-- RIGHT CARD (Tilted +7deg) -->
           <div class="absolute right-4 sm:right-8 top-12 sm:top-14 w-[170px] sm:w-[195px] h-[310px] sm:h-[350px] rounded-[26px] overflow-hidden story-card-shadow transform rotate-[7deg] translate-x-2 transition-all duration-500 hover:-translate-y-2 hover:rotate-[5deg] z-10 bg-slate-900 border-[2.5px] border-white/80">
             <!-- Background Image -->
-            <img src="https://images.unsplash.com/photo-1517841905240-472988babdf9?auto=format&fit=crop&w=600&q=80" 
+            <img src="/card3.jpg" 
                  alt="Sağ Hikaye" 
                  class="w-full h-full object-cover brightness-95" />
 
@@ -191,7 +170,7 @@
           <div class="absolute right-1 sm:right-3 bottom-14 sm:bottom-16 z-30 transform hover:scale-110 transition-transform cursor-pointer">
             <div class="w-11 h-11 sm:w-13 sm:h-13 rounded-full p-[2.5px] bg-gradient-to-tr from-[#FFD600] via-[#FF0169] to-[#D300C5] shadow-lg">
               <div class="w-full h-full rounded-full border-2 border-white overflow-hidden bg-white">
-                <img src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=150&q=80" 
+                <img src="/avatar.jpg" 
                      alt="Arkadaş Profil" 
                      class="w-full h-full object-cover" />
               </div>

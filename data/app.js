@@ -55,11 +55,11 @@ async function updateStatus() {
         const staSsid = document.getElementById('val-sta-ssid');
         const staRssi = document.getElementById('val-sta-rssi');
 
-        if (data.sta_connected && data.napt_active) {
-            statusBadge.innerHTML = '<span class="badge badge-success"><span class="status-dot dot-green"></span>İnternet Aktif</span>';
-            staStatus.innerHTML = '<span style="color: var(--success);">Bağlı & Yönlendiriliyor</span>';
+        if (data.sta_connected) {
+            statusBadge.innerHTML = '<span class="badge badge-success"><span class="status-dot dot-green"></span>Modeme Bağlı</span>';
+            staStatus.innerHTML = `<span style="color: var(--success);">Bağlı (${data.sta_ip || 'IP Alındı'})</span>`;
             staSsid.innerText = 'SSID: ' + (data.sta_ssid || '-');
-            staRssi.innerText = data.sta_rssi + ' dBm';
+            staRssi.innerText = (data.sta_rssi || 0) + ' dBm';
         } else if (data.sta_ssid && data.sta_ssid.length > 0) {
             statusBadge.innerHTML = '<span class="badge badge-warning">Modeme Bağlanılıyor...</span>';
             staStatus.innerHTML = '<span style="color: var(--warning);">Bağlantı Aranıyor</span>';
@@ -70,6 +70,11 @@ async function updateStatus() {
             staStatus.innerHTML = '<span style="color: var(--danger);">Yalnızca Yerel Ağ</span>';
             staSsid.innerText = 'Ayar sekmesinden Wi-Fi seçin';
             staRssi.innerText = '-';
+        }
+
+        const ssidInput = document.getElementById('sta-ssid-input');
+        if (ssidInput && !ssidInput.value && data.sta_ssid) {
+            ssidInput.value = data.sta_ssid;
         }
     } catch (err) {
         console.warn('Durum alinamadi:', err);
@@ -297,8 +302,19 @@ async function loadCustomSite() {
         if (data.domain) {
             document.getElementById('custom-domain-input').value = data.domain;
         }
-        if (data.html !== undefined) {
-            document.getElementById('custom-html-editor').value = data.html;
+
+        // HTML'i LittleFS'den statik dosya olarak dogrudan yukle (RAM siniri olmadan)
+        try {
+            const htmlRes = await fetch('/site/index.html');
+            if (htmlRes.ok) {
+                document.getElementById('custom-html-editor').value = await htmlRes.text();
+            } else if (data.html) {
+                document.getElementById('custom-html-editor').value = data.html;
+            }
+        } catch (e) {
+            if (data.html) {
+                document.getElementById('custom-html-editor').value = data.html;
+            }
         }
     } catch (err) {
         console.error('Özel site bilgisi alınamadı:', err);
@@ -315,15 +331,34 @@ async function saveCustomSite() {
     }
 
     try {
-        const res = await fetch('/api/custom-site', {
+        // 1. Alan adini guncelle
+        const domRes = await fetch('/api/custom-site-domain', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ domain, html })
+            body: JSON.stringify({ domain })
         });
-        if (res.ok) {
+
+        // 2. HTML kodunu dogrudan LittleFS'e akis (stream) olarak kaydet
+        const htmlRes = await fetch('/api/custom-site-html', {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/html; charset=utf-8' },
+            body: html
+        });
+
+        if (domRes.ok && htmlRes.ok) {
             alert('Harika! Özel web siteniz ve alan adınız başarıyla kaydedildi ve yayına alındı.');
         } else {
-            alert('Kaydetme hatası oluştu!');
+            // Yedek olarak genel api uzerinden dene
+            const fallbackRes = await fetch('/api/custom-site', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ domain, html })
+            });
+            if (fallbackRes.ok) {
+                alert('Harika! Özel web siteniz başarıyla kaydedildi.');
+            } else {
+                alert('Kaydetme hatası oluştu!');
+            }
         }
     } catch (err) {
         alert('Hata: ' + err);

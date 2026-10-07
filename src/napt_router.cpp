@@ -4,11 +4,11 @@
 #include <esp_wifi.h>
 #include <esp_netif.h>
 
+#define DHCPS_OFFER_DNS 0x02
+
 #if IP_NAPT
 extern "C" {
 #include "lwip/lwip_napt.h"
-    err_t ip_napt_init(uint16_t max_nat, uint8_t port_ranges);
-    err_t ip_napt_enable_no(uint8_t netif_num, uint8_t enable);
 }
 #endif
 
@@ -25,15 +25,32 @@ NaptRouter::NaptRouter()
     memset(&_config, 0, sizeof(_config));
 }
 
+static String cleanDomainString(const String& input) {
+    String d = input;
+    d.trim();
+    if (d.startsWith("https://")) d = d.substring(8);
+    else if (d.startsWith("http://")) d = d.substring(7);
+    int slash_idx = d.indexOf('/');
+    if (slash_idx != -1) d = d.substring(0, slash_idx);
+    int colon_idx = d.indexOf(':');
+    if (colon_idx != -1) d = d.substring(0, colon_idx);
+    d.trim();
+    d.toLowerCase();
+    if (d.startsWith("www.")) d = d.substring(4);
+    return d;
+}
+
 void NaptRouter::loadConfig() {
     prefs.begin(NVS_NAMESPACE, false);
 
-    String sta_ssid = prefs.getString(NVS_KEY_STA_SSID, "");
-    String sta_pass = prefs.getString(NVS_KEY_STA_PASS, "");
+    String sta_ssid = prefs.getString(NVS_KEY_STA_SSID, DEFAULT_STA_SSID);
+    String sta_pass = prefs.getString(NVS_KEY_STA_PASS, DEFAULT_STA_PASS);
     String ap_ssid = prefs.getString(NVS_KEY_AP_SSID, DEFAULT_AP_SSID);
     String ap_pass = prefs.getString(NVS_KEY_AP_PASS, DEFAULT_AP_PASS);
     String admin_pass = prefs.getString(NVS_KEY_ADMIN_PASS, "admin");
     String custom_domain = prefs.getString(NVS_KEY_CUSTOM_DOMAIN, LOCAL_ADMIN_DOMAIN);
+    custom_domain = cleanDomainString(custom_domain);
+    if (custom_domain.length() < 3) custom_domain = LOCAL_ADMIN_DOMAIN;
 
     strncpy(_config.sta_ssid, sta_ssid.c_str(), sizeof(_config.sta_ssid) - 1);
     strncpy(_config.sta_pass, sta_pass.c_str(), sizeof(_config.sta_pass) - 1);
@@ -64,22 +81,27 @@ void NaptRouter::saveConfig() {
 }
 
 void NaptRouter::configureApDhcpDns() {
-    // AP DHCP sunucusunun istemcilere DNS olarak 192.168.4.1 (ESP32) vermesini sagla
+    // AP DHCP sunucusunun istemcilere DNS olarak SADECE 192.168.4.1 (ESP32) vermesini sagla
+    // 8.8.8.8 verilirse Windows parallel sorguda insallah.com icin NXDOMAIN alip DNS_PROBE_STARTED verir!
     esp_netif_t* netif_ap = esp_netif_get_handle_from_ifkey("WIFI_AP_DEF");
     if (netif_ap != nullptr) {
         esp_netif_dhcps_stop(netif_ap);
 
-        esp_netif_dns_info_t dns_info;
-        dns_info.ip.type = ESP_IPADDR_TYPE_V4;
-        dns_info.ip.u_addr.ip4.addr = static_cast<uint32_t>(AP_LOCAL_IP);
+        esp_netif_dns_info_t dns_info_main;
+        dns_info_main.ip.type = ESP_IPADDR_TYPE_V4;
+        dns_info_main.ip.u_addr.ip4.addr = static_cast<uint32_t>(AP_LOCAL_IP);
 
-        esp_netif_set_dns_info(netif_ap, ESP_NETIF_DNS_MAIN, &dns_info);
+        esp_netif_dns_info_t dns_info_backup;
+        dns_info_backup.ip.type = ESP_IPADDR_TYPE_V4;
+        dns_info_backup.ip.u_addr.ip4.addr = static_cast<uint32_t>(AP_LOCAL_IP);
 
-        // DHCP sunucusunun bu DNS'i dagitmasi icin ayarla
-        uint8_t offer_dns = 1;
+        esp_netif_set_dns_info(netif_ap, ESP_NETIF_DNS_MAIN, &dns_info_main);
+        esp_netif_set_dns_info(netif_ap, ESP_NETIF_DNS_BACKUP, &dns_info_backup);
+
+        uint8_t offer_dns = DHCPS_OFFER_DNS;
         esp_netif_dhcps_option(netif_ap, ESP_NETIF_OP_SET, ESP_NETIF_DOMAIN_NAME_SERVER, &offer_dns, sizeof(offer_dns));
         esp_netif_dhcps_start(netif_ap);
-        Serial.println("[AĞ] AP DHCP sunucusuna DNS olarak ESP32 IP'si (192.168.4.1) atandi.");
+        Serial.println("[AĞ] AP DHCP istemcilerine DNS olarak yalnızca 192.168.4.1 atandı.");
     }
 }
 
@@ -89,10 +111,45 @@ bool NaptRouter::begin() {
 
     loadConfig();
 
-    // 1. Hibrit Mod: Hem AP (Kendi yayini) hem STA (Modem istemcisi)
-    WiFi.mode(WIFI_AP_STA);
+    // 1. Wi-Fi Olay Dinleyicileri (Event-driven connection & NAPT)
+    WiFi.onEvent([this](WiFiEvent_t event, WiFiEventInfo_t info) {
+        if (event == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
+            _sta_connected = true;
+            Serial.printf("\n[AĞ] >>> MODEME BAĞLANDI! <<<\n");
+            Serial.printf("  IP: %s\n  Ağ Geçidi (Gateway): %s\n  DNS: %s\n  Sinyal (RSSI): %d dBm\n",
+                          WiFi.localIP().toString().c_str(),
+                          WiFi.gatewayIP().toString().c_str(),
+                          WiFi.dnsIP().toString().c_str(),
+                          WiFi.RSSI());
 
-    // 2. SoftAP Agini Baslat (192.168.4.1)
+            // DNS motoruna upstream olarak modemin DNS adresini ver
+            dnsEngine.setUpstreamDns(WiFi.dnsIP());
+
+            // NAPT yonlendiriciyi AP uzerinde baslat
+            enableNapt();
+        } else if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
+            uint8_t reason = info.wifi_sta_disconnected.reason;
+            Serial.printf("[AĞ] Modem bağlantısı kesildi / başarısız (Neden Kodu: %d)\n", reason);
+            if (_sta_connected) {
+                _sta_connected = false;
+                disableNapt();
+            }
+        } else if (event == ARDUINO_EVENT_WIFI_AP_START) {
+            Serial.println("[AĞ] SoftAP Başlatıldı/Kanal Ayarlandı.");
+            configureApDhcpDns();
+            if (_sta_connected) {
+                enableNapt();
+            }
+        }
+    });
+
+    // 2. Hibrit Mod: Hem AP (Kendi yayini) hem STA (Modem istemcisi)
+    WiFi.mode(WIFI_AP_STA);
+    WiFi.setSleep(false);
+    WiFi.setAutoReconnect(true);
+    esp_wifi_set_ps(WIFI_PS_NONE); // Minimum ping ve maksimum aktarim hizi
+
+    // 3. SoftAP Agini Baslat (192.168.4.1)
     WiFi.softAPConfig(AP_LOCAL_IP, AP_GATEWAY, AP_SUBNET);
     bool ap_ok = WiFi.softAP(_config.ap_ssid, _config.ap_pass, DEFAULT_AP_CHANNEL, 0, DEFAULT_AP_MAX_CLIENT);
 
@@ -104,7 +161,7 @@ bool NaptRouter::begin() {
         Serial.println("[AĞ] HATA: SoftAP baslatilamadi!");
     }
 
-    // 3. Eger kaydedilmis uzak modem bilgisi varsa baglanmayi dene
+    // 4. Uzak modeme baglanmayi baslat
     if (strlen(_config.sta_ssid) > 0) {
         Serial.printf("[AĞ] Uzak modeme baglaniliyor: %s\n", _config.sta_ssid);
         WiFi.begin(_config.sta_ssid, _config.sta_pass);
@@ -117,21 +174,20 @@ bool NaptRouter::begin() {
 
 void NaptRouter::enableNapt() {
 #if IP_NAPT
-    if (!_napt_active) {
-        ip_napt_init(1024, 8); // 1024 baglanti tablosu boyutu
-        ip_napt_enable_no(ESP_IF_WIFI_STA, 1);
-        _napt_active = true;
-        Serial.println("[NAPT] lwIP NAPT Yonlendirici AKTIF! Bagli istemciler artik internete cikabilir.");
-    }
+    // lwIP NAPT KURALI: NAPT SADECE ic yerel ag (AP) IP adresi uzerinde aktif edilmelidir!
+    // STA interface uzerinde aktif edilirse lwIP disari giden paketleri NAT'lamayi durdurur.
+    ip_napt_enable(static_cast<uint32_t>(AP_LOCAL_IP), 1);
+    _napt_active = true;
+    Serial.println("[NAPT] lwIP NAPT Yönlendirici AKTİF! AP (192.168.4.1) istemcileri artık internete çıkabilir.");
 #else
-    Serial.println("[NAPT] UYARI: IP_NAPT derleme bayragi tanimli degil!");
+    Serial.println("[NAPT] UYARI: IP_NAPT derleme bayrağı tanımlı değil!");
 #endif
 }
 
 void NaptRouter::disableNapt() {
 #if IP_NAPT
     if (_napt_active) {
-        ip_napt_enable_no(ESP_IF_WIFI_STA, 0);
+        ip_napt_enable(static_cast<uint32_t>(AP_LOCAL_IP), 0);
         _napt_active = false;
         Serial.println("[NAPT] NAPT durduruldu.");
     }
@@ -144,29 +200,27 @@ void NaptRouter::update() {
     // Durum LED'i yonetimi
     handleLed();
 
-    // 10 saniyede bir STA baglanti durumunu denetle
+    // 10 saniyede bir STA durum kontrolu ve gerekiyorsa guvenli yeniden deneme
     if (now - _last_sta_check_ms > 10000) {
         _last_sta_check_ms = now;
 
         if (WiFi.status() == WL_CONNECTED) {
             if (!_sta_connected) {
                 _sta_connected = true;
-                Serial.printf("[AĞ] Modeme baglandi! IP: %s, RSSI: %d dBm, DNS: %s\n",
-                              WiFi.localIP().toString().c_str(),
-                              WiFi.RSSI(),
-                              WiFi.dnsIP().toString().c_str());
-
-                // DNS motoruna uzak modemin DNS adresini bildir
                 dnsEngine.setUpstreamDns(WiFi.dnsIP());
-
-                // NAPT'i baslat
                 enableNapt();
             }
         } else {
             if (_sta_connected) {
                 _sta_connected = false;
-                Serial.println("[AĞ] Uzak modem baglantisi koptu! Yeniden baglanilmaya calisiliyor...");
                 disableNapt();
+            }
+
+            // Eger 20 saniyeden uzun suredir bagli degilse yeniden deneme tetikle
+            if (strlen(_config.sta_ssid) > 0 && WiFi.status() != WL_CONNECTED) {
+                Serial.printf("[AĞ] Modem (%s) ile bağlantı kurulamadı, yeniden deneniyor...\n", _config.sta_ssid);
+                WiFi.disconnect(false);
+                WiFi.begin(_config.sta_ssid, _config.sta_pass);
             }
         }
     }
@@ -218,7 +272,8 @@ void NaptRouter::connectToRemoteAp(const char* ssid, const char* pass) {
     saveConfig();
 
     Serial.printf("[AĞ] Yeni modem ayarlari kaydedildi. Baglaniliyor: %s\n", _config.sta_ssid);
-    WiFi.disconnect();
+    WiFi.disconnect(false, false);
+    delay(100);
     WiFi.begin(_config.sta_ssid, _config.sta_pass);
 }
 
@@ -236,8 +291,10 @@ void NaptRouter::updateApSettings(const char* ssid, const char* pass) {
 }
 
 void NaptRouter::updateCustomDomain(const char* domain) {
-    if (!domain || strlen(domain) < 3) return;
-    strncpy(_config.custom_domain, domain, sizeof(_config.custom_domain) - 1);
+    if (!domain) return;
+    String cleaned = cleanDomainString(String(domain));
+    if (cleaned.length() < 3) return;
+    strncpy(_config.custom_domain, cleaned.c_str(), sizeof(_config.custom_domain) - 1);
     saveConfig();
     dnsEngine.setCustomDomain(_config.custom_domain);
     Serial.printf("[AĞ] Ozel yonlendirme alani kaydedildi: %s\n", _config.custom_domain);

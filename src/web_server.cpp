@@ -77,6 +77,9 @@ bool WebServerManager::begin() {
         Serial.println("[WEB] LittleFS baslatilamadi, yedek dahili arayuz kullanilacak.");
     } else {
         Serial.println("[WEB] LittleFS basariyla baglandi.");
+        if (!LittleFS.exists("/site")) {
+            LittleFS.mkdir("/site");
+        }
     }
 
     // ==========================================
@@ -87,9 +90,10 @@ bool WebServerManager::begin() {
     https_conf.cacert_len = strlen(SERVER_CERT_PEM) + 1;
     https_conf.prvtkey_pem = (const uint8_t*)SERVER_KEY_PEM;
     https_conf.prvtkey_len = strlen(SERVER_KEY_PEM) + 1;
-    https_conf.httpd.port = HTTPS_SERVER_PORT;
+    https_conf.port_secure = HTTPS_SERVER_PORT;
     https_conf.httpd.stack_size = 10240;
-    https_conf.httpd.max_uri_handlers = 16;
+    https_conf.httpd.max_uri_handlers = 32;
+    https_conf.httpd.uri_match_fn = httpd_uri_match_wildcard;
     https_conf.httpd.lru_purge_enable = true;
 
     esp_err_t https_ret = httpd_ssl_start(&_https_server, &https_conf);
@@ -105,8 +109,10 @@ bool WebServerManager::begin() {
     // ==========================================
     httpd_config_t http_conf = HTTPD_DEFAULT_CONFIG();
     http_conf.server_port = HTTP_SERVER_PORT;
+    http_conf.ctrl_port = 32769;
     http_conf.stack_size = 6144;
-    http_conf.max_uri_handlers = 16;
+    http_conf.max_uri_handlers = 32;
+    http_conf.uri_match_fn = httpd_uri_match_wildcard;
     http_conf.lru_purge_enable = true;
 
     esp_err_t http_ret = httpd_start(&_http_server, &http_conf);
@@ -227,7 +233,7 @@ void WebServerManager::registerUriHandlers(httpd_handle_t server) {
     };
     httpd_register_uri_handler(server, &uri_api_wifi_cfg);
 
-    // Yonetim Portali (/admin)
+    // Yonetim Portali (/admin ve /admin/)
     httpd_uri_t uri_admin = {
         .uri       = "/admin",
         .method    = HTTP_GET,
@@ -235,6 +241,22 @@ void WebServerManager::registerUriHandlers(httpd_handle_t server) {
         .user_ctx  = nullptr
     };
     httpd_register_uri_handler(server, &uri_admin);
+
+    httpd_uri_t uri_admin_slash = {
+        .uri       = "/admin/",
+        .method    = HTTP_GET,
+        .handler   = adminHandler,
+        .user_ctx  = nullptr
+    };
+    httpd_register_uri_handler(server, &uri_admin_slash);
+
+    httpd_uri_t uri_index_html = {
+        .uri       = "/index.html",
+        .method    = HTTP_GET,
+        .handler   = rootHandler,
+        .user_ctx  = nullptr
+    };
+    httpd_register_uri_handler(server, &uri_index_html);
 
     // Ozel Site Ayarlari ve HTML Duzenleyici API
     httpd_uri_t uri_api_site_get = {
@@ -253,6 +275,22 @@ void WebServerManager::registerUriHandlers(httpd_handle_t server) {
     };
     httpd_register_uri_handler(server, &uri_api_site_post);
 
+    httpd_uri_t uri_api_site_domain = {
+        .uri       = "/api/custom-site-domain",
+        .method    = HTTP_POST,
+        .handler   = apiCustomSiteDomainPostHandler,
+        .user_ctx  = nullptr
+    };
+    httpd_register_uri_handler(server, &uri_api_site_domain);
+
+    httpd_uri_t uri_api_site_html = {
+        .uri       = "/api/custom-site-html",
+        .method    = HTTP_POST,
+        .handler   = apiCustomSiteHtmlPostHandler,
+        .user_ctx  = nullptr
+    };
+    httpd_register_uri_handler(server, &uri_api_site_html);
+
     httpd_uri_t uri_api_reboot = {
         .uri       = "/api/reboot",
         .method    = HTTP_POST,
@@ -260,6 +298,15 @@ void WebServerManager::registerUriHandlers(httpd_handle_t server) {
         .user_ctx  = nullptr
     };
     httpd_register_uri_handler(server, &uri_api_reboot);
+
+    // Diger tum LittleFS statik dosyalari icin joker/wildcard eslesme
+    httpd_uri_t uri_wildcard = {
+        .uri       = "/*",
+        .method    = HTTP_GET,
+        .handler   = staticFileHandler,
+        .user_ctx  = nullptr
+    };
+    httpd_register_uri_handler(server, &uri_wildcard);
 }
 
 esp_err_t WebServerManager::rootHandler(httpd_req_t *req) {
@@ -271,7 +318,7 @@ esp_err_t WebServerManager::rootHandler(httpd_req_t *req) {
         if (LittleFS.exists(path)) {
             File file = LittleFS.open(path, "r");
             if (file) {
-                char chunk[512];
+                char chunk[1460];
                 while (file.available()) {
                     size_t read_bytes = file.readBytes(chunk, sizeof(chunk));
                     httpd_resp_send_chunk(req, chunk, read_bytes);
@@ -297,7 +344,7 @@ esp_err_t WebServerManager::adminHandler(httpd_req_t *req) {
         if (LittleFS.exists(path)) {
             File file = LittleFS.open(path, "r");
             if (file) {
-                char chunk[512];
+                char chunk[1460];
                 while (file.available()) {
                     size_t read_bytes = file.readBytes(chunk, sizeof(chunk));
                     httpd_resp_send_chunk(req, chunk, read_bytes);
@@ -315,16 +362,30 @@ esp_err_t WebServerManager::adminHandler(httpd_req_t *req) {
 }
 
 esp_err_t WebServerManager::staticFileHandler(httpd_req_t *req) {
-    const char* content_type = (const char*)req->user_ctx;
-    if (content_type) {
-        httpd_resp_set_type(req, content_type);
+    String path = req->uri;
+    int q_idx = path.indexOf('?');
+    if (q_idx != -1) {
+        path = path.substring(0, q_idx);
     }
 
-    String path = req->uri;
+    const char* content_type = (const char*)req->user_ctx;
+    if (!content_type) {
+        if (path.endsWith(".html")) content_type = "text/html; charset=utf-8";
+        else if (path.endsWith(".css")) content_type = "text/css";
+        else if (path.endsWith(".js")) content_type = "application/javascript";
+        else if (path.endsWith(".jpg") || path.endsWith(".jpeg")) content_type = "image/jpeg";
+        else if (path.endsWith(".png")) content_type = "image/png";
+        else if (path.endsWith(".ico")) content_type = "image/x-icon";
+        else if (path.endsWith(".svg")) content_type = "image/svg+xml";
+        else content_type = "text/plain";
+    }
+    httpd_resp_set_type(req, content_type);
+    httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=86400");
+
     if (LittleFS.exists(path)) {
         File file = LittleFS.open(path, "r");
         if (file) {
-            char chunk[512];
+            char chunk[1460];
             while (file.available()) {
                 size_t read_bytes = file.readBytes(chunk, sizeof(chunk));
                 httpd_resp_send_chunk(req, chunk, read_bytes);
@@ -350,6 +411,7 @@ esp_err_t WebServerManager::apiStatusHandler(httpd_req_t *req) {
     obj["sta_ip"] = naptRouter.getStaIp().toString();
     obj["sta_ssid"] = naptRouter.getStaSsid();
     obj["admin_domain"] = LOCAL_ADMIN_DOMAIN;
+    obj["custom_domain"] = naptRouter.getCustomDomain();
 
     String response;
     serializeJson(doc, response);
@@ -472,13 +534,7 @@ esp_err_t WebServerManager::apiBlockClientHandler(httpd_req_t *req) {
 }
 
 esp_err_t WebServerManager::apiWifiScanHandler(httpd_req_t *req) {
-    int n = WiFi.scanComplete();
-    if (n == -2) {
-        WiFi.scanNetworks(true); // Asenkron tarama baslat
-        httpd_resp_set_type(req, "application/json");
-        httpd_resp_send(req, "{\"status\":\"scanning\"}", HTTPD_RESP_USE_STRLEN);
-        return ESP_OK;
-    }
+    int n = WiFi.scanNetworks(false);
 
     JsonDocument doc;
     JsonArray array = doc.to<JsonArray>();
@@ -531,11 +587,15 @@ esp_err_t WebServerManager::apiCustomSiteGetHandler(httpd_req_t *req) {
     JsonDocument doc;
     doc["domain"] = naptRouter.getCustomDomain();
 
+    // RAM tasarrufu icin: Eger dosya 4 KB'tan kucukse JSON icinde gonder,
+    // Buyuk dosyalar icin istemci dogrudan /site/index.html uzerinden ceker (0 bayt RAM yuklemesi)
     String html_content = "";
     if (LittleFS.exists("/site/index.html")) {
         File f = LittleFS.open("/site/index.html", "r");
         if (f) {
-            html_content = f.readString();
+            if (f.size() <= 4096) {
+                html_content = f.readString();
+            }
             f.close();
         }
     }
@@ -550,10 +610,83 @@ esp_err_t WebServerManager::apiCustomSiteGetHandler(httpd_req_t *req) {
     return ESP_OK;
 }
 
+esp_err_t WebServerManager::apiCustomSiteDomainPostHandler(httpd_req_t *req) {
+    char buf[128];
+    int len = req->content_len;
+    if (len <= 0 || len >= (int)sizeof(buf)) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Gecersiz veri boyutu");
+        return ESP_FAIL;
+    }
+
+    int ret = httpd_req_recv(req, buf, len);
+    if (ret <= 0) {
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+    buf[ret] = '\0';
+
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, buf);
+    if (err) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Gecersiz JSON");
+        return ESP_FAIL;
+    }
+
+    const char* domain = doc["domain"];
+    if (domain && strlen(domain) > 1) {
+        naptRouter.updateCustomDomain(domain);
+        Serial.printf("[WEB] Ozel alan adi guncellendi: %s\n", domain);
+    }
+
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, "{\"status\":\"ok\"}", HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
+esp_err_t WebServerManager::apiCustomSiteHtmlPostHandler(httpd_req_t *req) {
+    int total_len = req->content_len;
+    if (total_len <= 0 || total_len > 131072) { // Maksimum 128 KB HTML
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Gecersiz dosya boyutu (Maksimum 128 KB)");
+        return ESP_FAIL;
+    }
+
+    if (!LittleFS.exists("/site")) {
+        LittleFS.mkdir("/site");
+    }
+
+    File f = LittleFS.open("/site/index.html", "w");
+    if (!f) {
+        Serial.println("[WEB] HATA: /site/index.html yazmak icin acilamadi!");
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
+
+    // Gelen veriyi 1 KB'lik parcalar halinde dogrudan LittleFS flash hafizasina akit (RAM tuketimi < 1 KB)
+    char chunk[1024];
+    int remaining = total_len;
+    while (remaining > 0) {
+        int to_read = (remaining < (int)sizeof(chunk)) ? remaining : (int)sizeof(chunk);
+        int read_bytes = httpd_req_recv(req, chunk, to_read);
+        if (read_bytes <= 0) {
+            f.close();
+            httpd_resp_send_500(req);
+            return ESP_FAIL;
+        }
+        f.write((const uint8_t*)chunk, read_bytes);
+        remaining -= read_bytes;
+    }
+    f.close();
+
+    Serial.printf("[WEB] Yeni ozel site HTML kodu (%d bayt) LittleFS'e basariyla kaydedildi.\n", total_len);
+    httpd_resp_set_type(req, "application/json");
+    httpd_resp_send(req, "{\"status\":\"ok\"}", HTTPD_RESP_USE_STRLEN);
+    return ESP_OK;
+}
+
 esp_err_t WebServerManager::apiCustomSitePostHandler(httpd_req_t *req) {
     int total_len = req->content_len;
-    if (total_len <= 0 || total_len > 16384) {
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Gecersiz veya asiri buyuk veri");
+    if (total_len <= 0 || total_len > 65536) {
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Gecersiz veri boyutu");
         return ESP_FAIL;
     }
 
@@ -594,12 +727,13 @@ esp_err_t WebServerManager::apiCustomSitePostHandler(httpd_req_t *req) {
     if (doc["html"].is<const char*>()) {
         const char* new_html = doc["html"];
         if (new_html) {
+            if (!LittleFS.exists("/site")) LittleFS.mkdir("/site");
             File f = LittleFS.open("/site/index.html", "w");
             if (f) {
                 f.print(new_html);
                 f.close();
-                Serial.println("[WEB] Yeni ozel site HTML kodu LittleFS'e yazildi.");
             }
+            Serial.println("[WEB] Yeni ozel site HTML kodu LittleFS'e basariyla kaydedildi.");
         }
     }
 

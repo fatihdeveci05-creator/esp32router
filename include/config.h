@@ -14,8 +14,11 @@
 // ==========================================
 #define DEFAULT_AP_SSID       "ESP32-SecureRouter"
 #define DEFAULT_AP_PASS       "12345678"
-#define DEFAULT_AP_CHANNEL    1
+#define DEFAULT_AP_CHANNEL    8
 #define DEFAULT_AP_MAX_CLIENT 8
+
+#define DEFAULT_STA_SSID      "SuperOnline 2.4G"
+#define DEFAULT_STA_PASS      "06112022BF"
 
 // ESP32 Erişim Noktası (AP) Yerel IP Adresi
 inline const IPAddress AP_LOCAL_IP(192, 168, 4, 1);
